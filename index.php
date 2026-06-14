@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require "./db_utils.php";
 $db_untils = new DB_UTILS();
 
@@ -68,6 +70,10 @@ $hot_products = $db_untils->getAll("
     ORDER BY total_sold DESC 
     LIMIT 3
 ");
+
+// Lấy ID tài khoản Admin để đồng bộ định danh JavaScript nhận tin nhắn
+$sysAdminId = (int)$db_untils->getValue("SELECT id FROM users WHERE role='admin' LIMIT 1");
+if($sysAdminId === 0) { $sysAdminId = 1; }
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -75,9 +81,9 @@ $hot_products = $db_untils->getAll("
 <head>
     <meta charset="UTF-8">
     <title>Bảng Điều Khiển Admin - Store</title>
+    <script src="https://js.pusher.com/8.0.1/pusher.min.js"></script>
     <link rel="stylesheet" href="./style.css?v=<?= time() ?>">
     <style>
-    /* CSS custom bổ sung cho Header mới */
     .header-actions {
         display: flex;
         align-items: center;
@@ -92,16 +98,10 @@ $hot_products = $db_untils->getAll("
         text-decoration: none;
         font-weight: bold;
         font-size: 13px;
-        transition: background 0.2s, transform 0.1s;
     }
 
     .logout-btn-custom:hover {
         background: #dc2626;
-        transform: translateY(-1px);
-    }
-
-    .logout-btn-custom:active {
-        transform: translateY(0);
     }
 
     .dashboard-grid {
@@ -243,6 +243,12 @@ $hot_products = $db_untils->getAll("
         color: #2563eb;
         transform: translateX(5px);
     }
+
+    @keyframes blinker {
+        50% {
+            opacity: 0;
+        }
+    }
     </style>
 </head>
 
@@ -252,10 +258,13 @@ $hot_products = $db_untils->getAll("
             <h1 style="cursor: pointer;" onclick="window.location.href='index.php'">⚙️ Hệ Thống Quản Trị</h1>
         </div>
         <div class="header-actions">
-            <!-- 💬 NÚT BẤM REAL-TIME CHAT CỦA ADMIN ĐƯỢC BỔ SUNG LÊN HEADER -->
-            <a href="admin_chat.php" class="cart-btn" style="background: #fe2c55;">💬 Trung tâm Chat</a>
+            <a href="admin_chat.php" class="cart-btn"
+                style="background: #fe2c55; position: relative; display: inline-flex; align-items: center; gap: 6px;">
+                <span>💬 Trung tâm Chat</span>
+                <span id="header-chat-badge"
+                    style="display: none; background: #ffffff; color: #fe2c55; font-size: 10px; padding: 1px 5px; border-radius: 50%; font-weight: bold; border: 1px solid #fe2c55; animation: blinker 1.5s linear infinite;">!</span>
+            </a>
 
-            <!-- Các nút phân hệ có sẵn của bạn -->
             <a href="admin_orders.php" class="cart-btn" style="background: #2563eb;">Quản lý đơn hàng</a>
             <a href="lap4.php" class="cart-btn" style="background: #10b981;">Quản lý sản phẩm</a>
             <a href="admin_users.php" class="cart-btn" style="background: #f59e0b;">Quản lý user</a>
@@ -266,8 +275,11 @@ $hot_products = $db_untils->getAll("
         </div>
     </header>
 
-    <div class="main-container" style="max-width: 1200px; margin: 30px auto; padding: 0 20px;">
+    <div id="chat-toast-alert"
+        style="position: fixed; bottom: 25px; left: 25px; background: #1e293b; color: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: none; z-index: 999999; font-weight: bold; font-size: 14px; border-left: 5px solid #fe2c55;">
+    </div>
 
+    <div class="main-container" style="max-width: 1200px; margin: 30px auto; padding: 0 20px;">
         <div class="dashboard-grid">
             <div class="stat-card revenue">
                 <h3>💰 Doanh Thu Hôm Nay</h3>
@@ -357,25 +369,69 @@ $hot_products = $db_untils->getAll("
 
         <div class="menu-list">
             <h2>🛠️ Phân Hệ Chức Năng Quản Lý Chi Tiết</h2>
-            <div class="admin-links" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-
-                <!-- Phân hệ báo cáo doanh thu hiện tại của bạn -->
-                <a href="admin_revenue.php" class="admin-link-btn"
-                    style="background: #fff7ed; border-color: #fed7aa; margin-bottom: 0;">
+            <div class="admin-links">
+                <a href="admin_revenue.php" class="admin-link-btn" style="background: #fff7ed; border-color: #fed7aa;">
                     <span>📈 Xem Báo Cáo & Phân Tích Chi Tiết Doanh Thu</span>
                     <span style="color: #ea580c;">Phân tích ngay →</span>
                 </a>
 
-                <!-- 💬 BỔ SUNG: Phân hệ trung tâm hỗ trợ trực tuyến tư vấn khách hàng -->
-                <a href="admin_chat.php" class="admin-link-btn"
-                    style="background: #fff1f2; border-color: #fecdd3; transition: all 0.2s;">
+                <a href="admin_chat.php" class="admin-link-btn" style="background: #fff1f2; border-color: #fecdd3;">
                     <span>💬 Trung tâm hỗ trợ & Tư vấn khách hàng trực tuyến</span>
                     <span style="color: #fe2c55;">Tư vấn ngay →</span>
                 </a>
-
             </div>
         </div>
     </div>
+
+    <script>
+    // Khởi tạo và lắng nghe kênh Pusher hệ thống
+    const pusher = new Pusher('94c4c17f4353f8cdc5af', {
+        cluster: 'ap1'
+    });
+    const channel = pusher.subscribe('store-channel');
+    const currentAdminId = <?= $sysAdminId ?>;
+
+    // Lắng nghe sự kiện khách hàng nhắn tin
+    channel.bind('chat-message-event', function(data) {
+        let payloadData = data;
+        if (typeof data === 'string') {
+            payloadData = JSON.parse(data);
+        }
+
+        let msg = payloadData;
+        if (payloadData.data) {
+            msg = (typeof payloadData.data === 'string') ? JSON.parse(payloadData.data) : payloadData.data;
+        }
+
+        if (!msg || !msg.sender_id) return;
+
+        // Nếu người nhận đích danh là tài khoản Admin hệ thống
+        if (parseInt(msg.receiver_id) === currentAdminId) {
+            // 1. Hiển thị dấu chấm thông báo trên Header
+            const badge = document.getElementById('header-chat-badge');
+            if (badge) {
+                badge.style.display = 'inline-block';
+            }
+
+            // 2. Hiển thị hộp Toast nổi lên góc màn hình
+            const toast = document.getElementById('chat-toast-alert');
+            if (toast) {
+                toast.innerHTML = `💬 Khách hàng vừa nhắn: "${msg.message_text.substring(0, 32)}..."`;
+                toast.style.display = 'block';
+
+                // Kích hoạt chuông báo Ting Ting
+                try {
+                    let audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-600.wav");
+                    audio.play();
+                } catch (e) {}
+
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                }, 6000);
+            }
+        }
+    });
+    </script>
 </body>
 
 </html>

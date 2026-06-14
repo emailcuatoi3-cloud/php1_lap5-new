@@ -222,3 +222,52 @@ EVENT: new-order-event
 HTTP CODE: 200
 CURL ERROR: 
 RESPONSE: {}
+
+============================
+2026-06-14 14:36:52
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:36:58
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:39:55
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:39:59
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:45:51
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:45:59
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
+
+============================
+2026-06-14 14:46:10
+EVENT: chat-message-event
+HTTP CODE: 200
+CURL ERROR: 
+RESPONSE: {}
