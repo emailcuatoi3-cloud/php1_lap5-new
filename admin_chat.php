@@ -122,11 +122,13 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
         } else {
             row.className = "msg-bubble-admin";
         }
-        row.innerText = text;
+
+        // 🔑 FIX QUAN TRỌNG: Sử dụng innerHTML để hiển thị thẻ sản phẩm đồng bộ phía Admin
+        row.innerHTML = text;
+
         body.appendChild(row);
         body.scrollTop = body.scrollHeight;
     }
-
     document.getElementById('admin-input-text').onkeypress = (e) => {
         if (e.key === 'Enter') sendAdminMessage();
     };

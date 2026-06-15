@@ -875,18 +875,15 @@ foreach($_SESSION['cart'] as $maSPKey => $item){
         if (e.key === 'Enter') sendBtn.click();
     };
 
-    function appendMessage(text, type) {
+    function appendUserMessage(text, type) {
         const msgHtml = document.createElement('div');
-        if (type === 'my-message') {
-            msgHtml.style =
-                "background: #fe2c55; color: white; padding: 8px 12px; border-radius: 8px; align-self: flex-end; max-width: 85%; word-break: break-word;";
-        } else {
-            msgHtml.style =
-                "background: #e2e8f0; color: black; padding: 8px 12px; border-radius: 8px; align-self: flex-start; max-width: 85%; word-break: break-word;";
-        }
-        msgHtml.innerText = text;
-        chatBody.appendChild(msgHtml);
-        chatBody.scrollTop = chatBody.scrollHeight;
+        msgHtml.className = (type === 'my-message') ? 'msg-bubble-user' : 'msg-bubble-admin';
+
+        // 🔑 FIX QUAN TRỌNG: Đổi sang innerHTML để trình duyệt tự dựng giao diện thẻ card sản phẩm của Bot
+        msgHtml.innerHTML = text;
+
+        containerChatBody.appendChild(msgHtml);
+        containerChatBody.scrollTop = containerChatBody.scrollHeight;
     }
 
     // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN TRẢ VỀ REAL-TIME

@@ -380,10 +380,7 @@ $totalPages = ceil($totalProducts / $limit);
     <script>
     // Tận dụng biến Session User ID của bạn đã có
     const myUserId = <?= json_encode($_SESSION['user']['id'] ?? 0) ?>;
-    const adminId = <?= (int)$db_untils->getValue(
-    "SELECT id FROM users WHERE role='admin' LIMIT 1"
-) ?>; // Giả lập ID mặc định của tài khoản quản trị Admin
-
+    const adminId = <?= (int)$db_untils->getValue("SELECT id FROM users WHERE role='admin' LIMIT 1") ?>;
 
     const openBtn = document.getElementById('chat-open-btn');
     const closeBtn = document.getElementById('chat-close-btn');
@@ -407,6 +404,9 @@ $totalPages = ceil($totalProducts / $limit);
         const text = inputText.value.trim();
         if (!text || myUserId === 0) return alert("Vui lòng đăng nhập hệ thống trước khi chat!");
 
+        appendMessage(text, 'my-message');
+        inputText.value = '';
+
         fetch('send_message.php', {
                 method: 'POST',
                 headers: {
@@ -419,9 +419,8 @@ $totalPages = ceil($totalProducts / $limit);
             })
             .then(res => res.json())
             .then(res => {
-                if (res.status === 'success') {
-                    appendMessage(text, 'my-message');
-                    inputText.value = '';
+                if (res.status !== 'success') {
+                    console.error("Gặp sự cố đồng bộ dữ liệu chat.");
                 }
             });
     };
@@ -439,16 +438,16 @@ $totalPages = ceil($totalProducts / $limit);
             msgHtml.style =
                 "background: #e2e8f0; color: black; padding: 8px 12px; border-radius: 8px; align-self: flex-start; max-width: 85%; word-break: break-word;";
         }
-        msgHtml.innerText = text;
+
+        // Sử dụng innerHTML giúp biên dịch khối thẻ HTML lồng nhau của Chatbot
+        msgHtml.innerHTML = text;
         chatBody.appendChild(msgHtml);
         chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN TRẢ VỀ REAL-TIME
+    // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN VÀ BOT TRẢ VỀ REAL-TIME
     channel.bind('chat-message-event', function(data) {
-
         console.log("EVENT RECEIVED:", data);
-
         let msg = data;
 
         if (typeof msg === 'string') {
@@ -456,9 +455,7 @@ $totalPages = ceil($totalProducts / $limit);
         }
 
         if (msg.data) {
-            msg = typeof msg.data === 'string' ?
-                JSON.parse(msg.data) :
-                msg.data;
+            msg = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
         }
 
         console.log("FINAL:", msg);
