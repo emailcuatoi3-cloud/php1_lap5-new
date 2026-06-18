@@ -1,157 +1,181 @@
 <?php
 session_start();
-require "./db_utils.php";
-require_once "./pusher_helper.php";
-$db_untils = new DB_UTILS();
+require_once("config.php");
+require_once("db_utils.php");
 
-$vnp_HashSecret = "326YDVX0RIDOJECUKHS4RIZ6C9RTQIGH"; // Chuỗi khóa bí mật đồng bộ của bạn
+$db = new DB_UTILS();
 
+// ── 1. Lấy secure hash từ VNPay gửi về ──────────────────────────────────────
 $vnp_SecureHash = $_GET['vnp_SecureHash'] ?? '';
-$inputData = array();
-foreach ($_GET as $key => $value) {
-    if (substr($key, 0, 4) == "vnp_") {
-        $inputData[$key] = $value;
-    }
-}
-unset($inputData['vnp_SecureHash']);
-ksort($inputData);
 
-$i = 0;
+// Tách hash ra khỏi mảng tham số trước khi kiểm tra
+$inputData = $_GET;
+unset($inputData['vnp_SecureHash']);
+unset($inputData['vnp_SecureHashType']); // Một số phiên bản VNPay trả thêm key này
+
+// ── 2. Tạo lại hash để xác minh chữ ký ─────────────────────────────────────
+ksort($inputData);
 $hashData = "";
 foreach ($inputData as $key => $value) {
-    if ($i == 1) {
-        $hashData = $hashData . '&' . urlencode($key) . "=" . urlencode($value);
-    } else {
-        $hashData = $hashData . urlencode($key) . "=" . urlencode($value);
-        $i = 1;
-    }
+    $hashData .= urlencode($key) . "=" . urlencode($value) . "&";
 }
-
+$hashData = rtrim($hashData, "&");
 $secureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
 
-$orderId = (int)($_GET['vnp_TxnRef'] ?? 0);
-$amount = ($_GET['vnp_Amount'] ?? 0) / 100;
-$responseCode = $_GET['vnp_ResponseCode'] ?? '99';
-$vnp_Token = $_GET['vnp_Token'] ?? null; 
-$vnp_CardNo = $_GET['vnp_CardNo'] ?? ''; 
-
-$payment_status = "Thất bại";
-$alert_class = "alert-danger";
-$message = "Giao dịch thanh toán trực tuyến qua VNPAY đã bị thất bại hoặc hủy bỏ.";
-
-if ($secureHash === $vnp_SecureHash) {
-    if ($responseCode == '00') {
-        $payment_status = "Thành công";
-        $alert_class = "alert-success";
-        $message = "🎉 Thanh toán thành công! Đơn hàng #" . $orderId . " đã được hệ thống ghi nhận.";
-
-        // 1. Cập nhật cơ sở dữ liệu
-        $db_untils->execute("UPDATE orders SET status = 'Chờ xác nhận' WHERE id = ?", [$orderId]);
-
-        // 2. Kiểm tra nếu có Tokenization thì lưu lại để kích hoạt 1-Click
-        $current_user = $_SESSION['user']['id'] ?? null;
-        if ($current_user && !empty($vnp_Token)) {
-            $masked_account = "********" . substr($vnp_CardNo, -4);
-            $sql_save_token = "INSERT INTO user_tokens (user_id, payment_method, token_id, masked_account) VALUES (?, 'vnpay', ?, ?)
-                               ON DUPLICATE KEY UPDATE token_id = ?, masked_account = ?";
-            $db_untils->execute($sql_save_token, [$current_user, $vnp_Token, $masked_account, $vnp_Token, $masked_account]);
-        }
-
-        // 3. 🚀 PHÁT TÍN HIỆU WEBSOCKET SANG ADMIN NGAY LẬP TỨC 
-        $order = $db_untils->getOne("SELECT * FROM orders WHERE id = ?", [$orderId]);
-        if ($order) {
-            $details = $db_untils->getAll("SELECT od.*, p.mota FROM order_details od JOIN products p ON od.product_id = p.maSP WHERE od.order_id = ?", [$orderId]);
-            $product_titles = [];
-            foreach ($details as $item) {
-                $product_titles[] = "- " . $item['mota'] . " (SL: <strong>" . $item['quantity'] . "</strong>)";
-            }
-
-            broadcastRealtime('new-order-event', [
-                'id' => $orderId,
-                'fullname' => htmlspecialchars($order['fullname']),
-                'phone' => htmlspecialchars($order['phone']),
-                'address' => htmlspecialchars($order['address']),
-                'payment_method' => "VNPAY",
-                'total_money' => number_format($order['total_money']),
-                'status' => 'Chờ xác nhận',
-                'products_html' => implode('<br>', $product_titles)
-            ]);
-        }
-    }
-}
+// ── 3. Kiểm tra chữ ký và phản hồi ─────────────────────────────────────────
+$orderId = $inputData['vnp_TxnRef'] ?? '';
+$responseCode = $inputData['vnp_ResponseCode'] ?? '';
+$amount = isset($inputData['vnp_Amount']) ? (int) $inputData['vnp_Amount'] / 100 : 0;
 ?>
 <!DOCTYPE html>
 <html lang="vi">
 
 <head>
     <meta charset="UTF-8">
-    <title>Kết quả giao dịch VNPAY</title>
-    <link rel="stylesheet" href="./style.css?v=<?= time() ?>">
+    <title>Kết Quả Thanh Toán VNPay</title>
     <style>
-    .vnpay-box {
-        max-width: 600px;
-        margin: 60px auto;
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Arial, sans-serif;
+    }
+
+    body {
+        background: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .card {
         background: white;
-        padding: 30px;
-        border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+        max-width: 480px;
+        width: 100%;
+        padding: 40px 30px;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         text-align: center;
     }
 
-    .alert-success {
-        color: #15803d;
-        background: #f0fdf4;
-        padding: 12px;
-        border-radius: 6px;
-        font-weight: bold;
-        margin-bottom: 20px;
+    .icon {
+        font-size: 56px;
+        margin-bottom: 16px;
     }
 
-    .alert-danger {
-        color: #b91c1c;
-        background: #fef2f2;
-        padding: 12px;
-        border-radius: 6px;
-        font-weight: bold;
-        margin-bottom: 20px;
+    h2 {
+        font-size: 22px;
+        margin-bottom: 10px;
     }
 
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
+    .info {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 14px;
+        margin: 20px 0;
         text-align: left;
+        font-size: 14px;
+        line-height: 2;
     }
 
-    table td {
-        padding: 12px 10px;
-        border-bottom: 1px solid #e2e8f0;
+    .info span {
+        font-weight: bold;
+    }
+
+    a.btn {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 12px 28px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 15px;
+    }
+
+    .btn-home {
+        background: #2563eb;
+        color: white;
+    }
+
+    .btn-order {
+        background: #10b981;
+        color: white;
+        margin-left: 10px;
+    }
+
+    .success h2 {
+        color: #059669;
+    }
+
+    .fail h2 {
+        color: #dc2626;
+    }
+
+    .invalid h2 {
+        color: #92400e;
     }
     </style>
 </head>
 
 <body>
-    <div class="vnpay-box">
-        <h2 style="color: #005baa;">🔵 KẾT QUẢ GIAO DỊCH VNPAY</h2>
-        <div class="<?= $alert_class ?>"><?= $message ?></div>
-        <table>
-            <tr>
-                <td>Mã hóa đơn:</td>
-                <td><strong>#<?= htmlspecialchars($orderId) ?></strong></td>
-            </tr>
-            <tr>
-                <td>Số tiền:</td>
-                <td style="color:#dc2626; font-weight:bold;"><?= number_format((int)$amount) ?> đ</td>
-            </tr>
-            <tr>
-                <td>Trạng thái:</td>
-                <td style="font-weight:bold; color: <?= ($payment_status === 'Thành công') ? '#16a34a' : '#dc2626' ?>">
-                    <?= $payment_status ?></td>
-            </tr>
-        </table>
-        <a href="lap4.php" class="btn"
-            style="background: #005baa; color:white; padding:10px 20px; text-decoration:none; border-radius:4px; display:inline-block; font-weight:bold;">🏠
-            Quay lại cửa hàng</a>
+    <div class="card">
+        <?php if ($secureHash !== $vnp_SecureHash): ?>
+        <!-- Chữ ký không hợp lệ -->
+        <div class="invalid">
+            <div class="icon">⚠️</div>
+            <h2>Chữ ký không hợp lệ!</h2>
+            <p style="color:#78716c; margin-top:8px;">Phản hồi từ VNPay có thể đã bị giả mạo hoặc thay đổi.</p>
+        </div>
+
+        <?php elseif ($responseCode === '00'): ?>
+
+        <?php
+$db->execute(
+    "UPDATE orders SET status = 'Đã thanh toán' WHERE id = ?",
+    [$orderId]
+);
+?>
+        <div class="success">
+            <div class="icon">✅</div>
+            <h2>Thanh toán thành công!</h2>
+            <div class="info">
+                <div>Mã đơn hàng: <span><?= htmlspecialchars($orderId) ?></span></div>
+                <div>Số tiền: <span><?= number_format($amount, 0, ',', '.') ?>đ</span></div>
+                <div>Trạng thái: <span style="color:#059669">Đã thanh toán</span></div>
+            </div>
+        </div>
+
+        <?php else: ?>
+
+        <?php
+$status = ($responseCode == '24')
+    ? 'Đã hủy'
+    : 'Thanh toán thất bại';
+
+$db->execute(
+    "UPDATE orders SET status = ? WHERE id = ?",
+    [$status, $orderId]
+);
+?>
+        <div class="fail">
+            <div class="icon">❌</div>
+            <h2>Thanh toán không thành công!</h2>
+            <div class="info">
+                <div>Mã đơn hàng: <span><?= htmlspecialchars($orderId) ?></span></div>
+                <div>Mã lỗi VNPay: <span><?= htmlspecialchars($responseCode) ?></span></div>
+                <div>Trạng thái: <span style="color:#dc2626">Thanh toán thất bại</span></div>
+            </div>
+            <p style="color:#78716c; font-size:14px;">Đơn hàng của bạn đã được lưu. Bạn có thể thử thanh toán lại trong
+                trang quản lý đơn hàng.</p>
+        </div>
+        <?php endif; ?>
+
+        <div style="margin-top: 20px;">
+            <a href="index.php" class="btn btn-home">🏠 Trang chủ</a>
+            <a href="user_orders.php" class="btn btn-order">📦 Đơn hàng của tôi</a>
+        </div>
     </div>
 </body>
 

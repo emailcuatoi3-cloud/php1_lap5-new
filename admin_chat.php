@@ -25,9 +25,7 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
             <h1>⚙️ Trung tâm tư vấn trực tuyến (Real-time Chat)</h1>
         </div>
         <div class="header-actions">
-
-            <a href="index.php" class="cart-btn" style="background: #4b5563;">📊 Bảng điều khiển</a>
-            <a href="admin_orders.php" class="cart-btn" style="background: #2563eb;">📦 Quản lý đơn hàng</a>
+            <a href="admin_orders.php" class="cart-btn" style="background: #4b5563;">← Quản lý đơn hàng</a>
         </div>
     </header>
 
@@ -35,19 +33,15 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
         <div class="admin-user-list-panel">
             <div class="admin-panel-title">DANH SÁCH USER</div>
             <?php foreach($users as $index => $u){ ?>
-            <div class="admin-user-item <?= $index===0?'active':'' ?>" id="user_item_row_<?= $u['id'] ?>"
+            <div class="admin-user-item <?= $index===0?'active':'' ?>"
                 onclick="changeTargetUser(<?= $u['id'] ?>, '<?= htmlspecialchars($u['fullname']) ?>', this)">
-                <span>👤 <?= htmlspecialchars($u['fullname']) ?> (ID: <?= $u['id'] ?>)</span>
-
-                <span class="unread-msg-badge" id="unread_notification_<?= $u['id'] ?>"
-                    style="display: none; color: #ef4444; font-size: 11px; margin-left: 6px; font-weight: bold; font-style: italic; animation: blinker 1.5s linear infinite;">(Tin
-                    mới)</span>
+                👤 <?= htmlspecialchars($u['fullname']) ?> (ID: <?= $u['id'] ?>)
             </div>
             <?php } ?>
         </div>
 
         <div class="admin-message-chat-panel">
-            <div class="amazon-chat-header" id="target-user-title">Đang trò chuyện với: Khách hàng</div>
+            <div class="admin-chat-header" id="target-user-title">Đang trò chuyện với: Khách hàng</div>
             <div class="admin-chat-messages-body" id="admin-chat-body">
                 <div
                     style="background: #fff; padding: 10px; border-radius: 8px; align-self: flex-start; max-width: 80%;">
@@ -60,14 +54,6 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
         </div>
     </div>
 
-    <style>
-    @keyframes blinker {
-        50% {
-            opacity: 0;
-        }
-    }
-    </style>
-
     <script>
     let activeReceiverId = <?= $users[0]['id'] ?? 0 ?>;
     const adminUserId = <?= (int)$_SESSION['user']['id'] ?>;
@@ -79,12 +65,6 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
         document.getElementById('target-user-title').innerText = "Đang trò chuyện với: " + name;
         document.getElementById('admin-chat-body').innerHTML =
             `<div style="background: #fff; padding: 10px; border-radius: 8px; align-self: flex-start;">Đã chuyển sang hội thoại của ${name}.</div>`;
-
-        // 🔔 FIX: Khi Admin click vào xem cuộc hội thoại, tự động ẩn dòng trạng thái "(Tin mới)" đi
-        const alertBadge = document.getElementById('unread_notification_' + id);
-        if (alertBadge) {
-            alertBadge.style.display = 'none';
-        }
     }
 
     function sendAdminMessage(e) {
@@ -123,12 +103,13 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
             row.className = "msg-bubble-admin";
         }
 
-        // 🔑 FIX QUAN TRỌNG: Sử dụng innerHTML để hiển thị thẻ sản phẩm đồng bộ phía Admin
+        // 🔑 SỬA LỖI HIỂN THỊ HTML THÔ: Đổi từ innerText thành innerHTML để Admin xem được khung giao diện sản phẩm của Bot
         row.innerHTML = text;
 
         body.appendChild(row);
         body.scrollTop = body.scrollHeight;
     }
+
     document.getElementById('admin-input-text').onkeypress = (e) => {
         if (e.key === 'Enter') sendAdminMessage();
     };
@@ -151,19 +132,9 @@ $users = $db_untils->getAll("SELECT id, fullname, username FROM users WHERE role
 
         if (!msg || !msg.sender_id) return;
 
-        // Trường hợp A: Khách hàng đang mở tab hội thoại nhắn tin tới
         if (parseInt(msg.sender_id) === parseInt(activeReceiverId) && parseInt(msg.receiver_id) ===
             adminUserId) {
             appendMsgRow(msg.message_text, 'guest');
-            playChatSound();
-        }
-        // Trường hợp B: Khách hàng VÃNG LAI/KHÁC nhắn tin tới (khi admin đang ở tab người khác)
-        else if (parseInt(msg.receiver_id) === adminUserId) {
-            // 🔔 KÍCH HOẠT HIỂN THỊ CHỮ "(Tin mới)" MÀU ĐỎ NHẤP NHÁY Ở USER ĐÓ
-            const targetBadge = document.getElementById('unread_notification_' + msg.sender_id);
-            if (targetBadge) {
-                targetBadge.style.display = 'inline-block';
-            }
             playChatSound();
         }
     });

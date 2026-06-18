@@ -1,6 +1,8 @@
 <?php
+
 session_start();
 require "./db_utils.php";
+require_once "./config.php"; // 🔑 BỔ SUNG: Nhúng file cấu hình để lấy tài khoản VNPAY/MoMo mới
 require_once "./pusher_helper.php"; // Nhúng tệp hàm helper xử lý Real-time
 $db_untils = new DB_UTILS();
 
@@ -165,50 +167,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'checkout') {
             exit();
         }
 
-        // --- LUỒNG XỬ LÝ TRUYỀN THỐNG: THANH TOÁN QUA CỔNG VNPAY ---
         if ($payment_method === 'VNPAY') {
-            $vnp_TmnCode = "2NBWGQ5J";
-            $vnp_HashSecret = "326YDVX0RIDOJECUKHS4RIZ6C9RTQIGH";
-            $vnp_Url = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-            
-            $vnp_Returnurl = "http://" . $_SERVER['HTTP_HOST'] . strtok($_SERVER['REQUEST_URI'], '?') . "vnpay_return.php";
-            $vnp_Returnurl = str_replace("cart.php", "vnpay_return.php", $vnp_Returnurl);
 
-            $vnp_TxnRef = $order_id;
-            $vnp_OrderInfo = "Thanh toan don hang #" . $order_id;
-            $vnp_OrderType = "billpayment";
-            $vnp_Amount = $total * 100;
-            $vnp_Locale = "vi";
-            $vnp_BankCode = "NCB";
-            $vnp_IpAddr = $_SERVER['REMOTE_ADDR'];
+    $vnp_TxnRef = $order_id;
+    $vnp_OrderInfo = "Thanh toan don hang";
+    $vnp_OrderType = "other";
+    $vnp_Amount = $total * 100;
+    $vnp_Locale = "vi";
+    $vnp_IpAddr = $_SERVER['REMOTE_ADDR'];
 
-            $inputData = array(
-                "vnp_Version" => "2.1.0", "vnp_TmnCode" => $vnp_TmnCode, "vnp_Amount" => $vnp_Amount, "vnp_Command" => "pay",
-                "vnp_CreateDate" => date('YmdHis'), "vnp_CurrCode" => "VND", "vnp_IpAddr" => $vnp_IpAddr, "vnp_Locale" => $vnp_Locale,
-                "vnp_OrderInfo" => $vnp_OrderInfo, "vnp_OrderType" => $vnp_OrderType, "vnp_ReturnUrl" => $vnp_Returnurl, "vnp_TxnRef" => $vnp_TxnRef,
-                "vnp_CardDebit" => "1"
-            );
-            if (isset($vnp_BankCode) && $vnp_BankCode != "") { $inputData['vnp_BankCode'] = $vnp_BankCode; }
+if ($vnp_IpAddr == "::1") {
+    $vnp_IpAddr = "127.0.0.1";
+}
 
-            ksort($inputData);
-            $query = ""; $i = 0; $hashdata = "";
-            foreach ($inputData as $key => $value) {
-                if ($i == 1) { $query .= '&' . urlencode($key) . "=" . urlencode($value); }
-                else { $query .= urlencode($key) . "=" . urlencode($value); $i = 1; }
-                $hashdata .= urlencode($key) . '=' . urlencode($value) . '&';
-            }
-            
-            $hashdata = rtrim($hashdata, '&');
-            $vnp_Url = $vnp_Url . "?" . $query;
-            if (isset($vnp_HashSecret)) {
-                $vnpSecureHash = hash_hmac('sha512', $hashdata, $vnp_HashSecret);
-                $vnp_Url .= '&vnp_SecureHash=' . $vnpSecureHash;
-            }
+    $inputData = [
+        "vnp_Version"    => "2.1.0",
+        "vnp_TmnCode"    => $vnp_TmnCode,
+        "vnp_Amount"     => $vnp_Amount,
+        "vnp_Command"    => "pay",
+        "vnp_CreateDate" => date('YmdHis'),
+        "vnp_CurrCode"   => "VND",
+        "vnp_IpAddr"     => $vnp_IpAddr,
+        "vnp_Locale"     => $vnp_Locale,
+        "vnp_OrderInfo"  => $vnp_OrderInfo,
+        "vnp_OrderType"  => $vnp_OrderType,
+        "vnp_ReturnUrl"  => $vnp_Returnurl,
+        "vnp_TxnRef"     => $vnp_TxnRef
+    ];
 
-            $_SESSION['cart'] = [];
-            echo json_encode(['status' => 'redirect_vnpay', 'redirect_url' => $vnp_Url, 'message' => 'Đang kết nối đến cổng VNPAY...']);
-            exit();
-        } 
+  
+
+   ksort($inputData);
+
+$hashdata = "";
+$query = "";
+
+$i = 0;
+
+foreach ($inputData as $key => $value) {
+
+    if ($i == 1) {
+        $hashdata .= '&' . urlencode($key) . "=" . urlencode($value);
+        $query .= '&' . urlencode($key) . "=" . urlencode($value);
+    } else {
+        $hashdata .= urlencode($key) . "=" . urlencode($value);
+        $query .= urlencode($key) . "=" . urlencode($value);
+        $i = 1;
+    }
+}
+
+$vnpSecureHash = hash_hmac(
+    'sha512',
+    $hashdata,
+    $vnp_HashSecret
+);
+
+$paymentUrl = $vnp_Url
+            . "?"
+            . $query
+            . "&vnp_SecureHash="
+            . $vnpSecureHash;
+
+    $_SESSION['cart'] = [];
+    file_put_contents(
+    __DIR__ . '/vnpay_url.txt',
+    $paymentUrl . PHP_EOL . PHP_EOL,
+    FILE_APPEND
+);
+    echo json_encode([
+        'status' => 'redirect_vnpay',
+        'redirect_url' => $paymentUrl,
+        'message' => 'Đang kết nối đến cổng VNPAY...'
+    ]);
+    exit();
+}
         // --- LUỒNG TRUYỀN THỐNG: THANH TOÁN QUA CỔNG ĐIỆN TỬ MOMO ---
         elseif ($payment_method === 'MOMO') {
             $endpoint = "https://test-payment.momo.vn/v2/gateway/api/create";
@@ -274,10 +306,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'checkout') {
     }
 }
 
-// Luồng tăng giảm số lượng sản phẩm ngoài giao diện
+// 🛡️ CHỈNH SỬA: Luồng tăng giảm số lượng sản phẩm ngoài giao diện giỏ hàng (RÀNG BUỘC KIỂM TRA TỒN KHO)
 if (isset($_GET['action'])) {
     $id = $_GET['id'] ?? '';
-    if ($_GET['action'] == 'increase' && isset($_SESSION['cart'][$id])) $_SESSION['cart'][$id]['quantity']++;
+    
+    if ($_GET['action'] == 'increase' && isset($_SESSION['cart'][$id])) {
+        // Lấy số lượng hàng còn trong kho từ DB để đối chiếu
+        $prodStock = $db_untils->getOne("SELECT ton_kho FROM products WHERE maSP = ?", [$id]);
+        
+        // Bẫy lỗi nếu số lượng tăng vượt quá mức kho thực tế cho phép
+        if ($prodStock && (int)$prodStock['ton_kho'] <= (int)$_SESSION['cart'][$id]['quantity']) {
+            echo "<script>alert('Xin lỗi! Số lượng sản phẩm trong kho không đủ để cung cấp thêm!'); window.location.href='cart.php';</script>";
+            exit();
+        }
+        $_SESSION['cart'][$id]['quantity']++;
+    }
+    
     if ($_GET['action'] == 'decrease' && isset($_SESSION['cart'][$id])) {
         $_SESSION['cart'][$id]['quantity']--;
         if ($_SESSION['cart'][$id]['quantity'] <= 0) unset($_SESSION['cart'][$id]);
@@ -875,19 +919,24 @@ foreach($_SESSION['cart'] as $maSPKey => $item){
         if (e.key === 'Enter') sendBtn.click();
     };
 
-    function appendUserMessage(text, type) {
+    function appendMessage(text, type) {
         const msgHtml = document.createElement('div');
-        msgHtml.className = (type === 'my-message') ? 'msg-bubble-user' : 'msg-bubble-admin';
+        if (type === 'my-message') {
+            msgHtml.style =
+                "background: #fe2c55; color: white; padding: 8px 12px; border-radius: 8px; align-self: flex-end; max-width: 85%; word-break: break-word;";
+        } else {
+            msgHtml.style =
+                "background: #e2e8f0; color: black; padding: 8px 12px; border-radius: 8px; align-self: flex-start; max-width: 85%; word-break: break-word;";
+        }
 
-        // 🔑 FIX QUAN TRỌNG: Đổi sang innerHTML để trình duyệt tự dựng giao diện thẻ card sản phẩm của Bot
+        // 🔑 SỬA LỖI HIỂN THỊ HTML THÔ: Đổi từ innerText thành innerHTML để dựng cấu trúc sản phẩm của Bot
         msgHtml.innerHTML = text;
 
-        containerChatBody.appendChild(msgHtml);
-        containerChatBody.scrollTop = containerChatBody.scrollHeight;
+        chatBody.appendChild(msgHtml);
+        chatBody.scrollTop = chatBody.scrollHeight;
     }
 
     // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN TRẢ VỀ REAL-TIME
-    // Biến channel và pusher đã được nhúng sẵn ở file cart của bạn
     channel.bind('chat-message-event', function(data) {
 
         console.log("RAW:", data);

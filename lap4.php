@@ -86,7 +86,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $image = trim($_POST['image']);
 
     if (empty($productId)) { $errors[] = "ID không được để trống"; }
-    if (empty($price)) { $errors[] = "Giá tiền không được để trống"; }
+    
+    // 🛡️ CHỈNH SỬA: Bổ sung validated chặn không cho thêm hoặc cập nhật giá âm
+    if (empty($price)) { 
+        $errors[] = "Giá tiền không được để trống"; 
+    } elseif ((float)$price < 0) {
+        $errors[] = "Giá tiền sản phẩm không được là số âm!";
+    }
+    
     if ($ton_kho < 0) { $errors[] = "Số lượng tồn kho không được âm"; }
 
     if (isset($_POST['update'])) {
@@ -171,6 +178,10 @@ $totalPages = ceil($totalProducts / $limit);
             <?php } else { ?>
             <a href="search_order.php" class="cart-btn" style="background: #0284c7; box-shadow: none;">🔍 Tra cứu đơn
                 hàng</a>
+            <a href="javascript:void(0)" onclick="document.getElementById('chat-open-btn').click();" class="cart-btn"
+                style="background:#8b5cf6;">
+                💬 Trung tâm hỗ trợ
+            </a>
             <?php } ?>
 
             <div class="user-nav-box"
@@ -329,7 +340,6 @@ $totalPages = ceil($totalProducts / $limit);
                 if (res.ok) {
                     const counter = document.getElementById('cart-counter');
                     if (counter) counter.innerText = parseInt(counter.innerText) + 1;
-                    alert('Đã thêm sản phẩm vào giỏ hàng thành công! 🎉');
                 } else {
                     alert('Sản phẩm đã vượt quá giới hạn hàng tồn kho!');
                 }
@@ -380,7 +390,9 @@ $totalPages = ceil($totalProducts / $limit);
     <script>
     // Tận dụng biến Session User ID của bạn đã có
     const myUserId = <?= json_encode($_SESSION['user']['id'] ?? 0) ?>;
-    const adminId = <?= (int)$db_untils->getValue("SELECT id FROM users WHERE role='admin' LIMIT 1") ?>;
+    const adminId =
+        <?= (int)$db_untils->getValue("SELECT id FROM users WHERE role='admin' LIMIT 1") ?>; // Giả lập ID mặc định của tài khoản quản trị Admin
+
 
     const openBtn = document.getElementById('chat-open-btn');
     const closeBtn = document.getElementById('chat-close-btn');
@@ -420,7 +432,7 @@ $totalPages = ceil($totalProducts / $limit);
             .then(res => res.json())
             .then(res => {
                 if (res.status !== 'success') {
-                    console.error("Gặp sự cố đồng bộ dữ liệu chat.");
+                    console.error("Lỗi đồng bộ tin nhắn phía máy chủ!");
                 }
             });
     };
@@ -439,13 +451,14 @@ $totalPages = ceil($totalProducts / $limit);
                 "background: #e2e8f0; color: black; padding: 8px 12px; border-radius: 8px; align-self: flex-start; max-width: 85%; word-break: break-word;";
         }
 
-        // Sử dụng innerHTML giúp biên dịch khối thẻ HTML lồng nhau của Chatbot
+        // 🔑 SỬA LỖI HIỂN THỊ HTML THÔ: Đổi từ innerText thành innerHTML để dựng cấu trúc sản phẩm của Bot
         msgHtml.innerHTML = text;
+
         chatBody.appendChild(msgHtml);
         chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN VÀ BOT TRẢ VỀ REAL-TIME
+    // 📡 LẮNG NGHE ĐƯỜNG TRUYỀN WEBSOCKET TỪ ADMIN TRẢ VỀ REAL-TIME
     channel.bind('chat-message-event', function(data) {
         console.log("EVENT RECEIVED:", data);
         let msg = data;
@@ -455,7 +468,9 @@ $totalPages = ceil($totalProducts / $limit);
         }
 
         if (msg.data) {
-            msg = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+            msg = typeof msg.data === 'string' ?
+                JSON.parse(msg.data) :
+                msg.data;
         }
 
         console.log("FINAL:", msg);
@@ -468,7 +483,6 @@ $totalPages = ceil($totalProducts / $limit);
         }
     });
     </script>
-
 </body>
 
 </html>
